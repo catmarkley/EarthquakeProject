@@ -6,11 +6,13 @@ import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import stats
 import geopandas as gpd
 from shapely.geometry import Point
 import datetime
 import pytz
 import gmplot
+from pandas.api.types import is_numeric_dtype
 # from mpl_toolkits.basemap import Basemap
 
 
@@ -25,6 +27,7 @@ KEYWORDS = ["earthquake", "quake", "shaking", "shake"]
 
 # Imports tweets from files.
 def import_tweets(filename):
+    global TWEETS
 
     # Import data from file
     with open(filename) as file:
@@ -55,7 +58,7 @@ def import_tweets(filename):
             TWEETS[tweet["id"]]["created_at"] = timestamp
             TWEETS[tweet["id"]]["text"] = tweet["text"]
 
-            print(tweet["coordinates"]["coordinates"], "\n\t", tweet["text"], "\n", timestamp, "\n\n" )
+            # print(tweet["coordinates"]["coordinates"], "\n\t", tweet["text"], "\n", timestamp, "\n\n" )
 
             # Check if new minimum
             if timestamp < minDatetime:
@@ -66,8 +69,11 @@ def import_tweets(filename):
 
             times.append(timestamp)
 
-    print("MINIMUM DATE:")
-    print(minDatetime)
+    # print("MINIMUM DATE:")
+    # print(minDatetime)
+
+    print(len(TWEETS))
+    removeOutliers()
 
     # first step is the min date time rounded down to 10 minute mark (floor style)
     step = minDatetime  - datetime.timedelta(minutes=minDatetime.minute % 10,
@@ -101,8 +107,17 @@ def import_tweets(filename):
     # for tweet in TWEETS.items():
     #     print(tweet)
     print(len(TWEETS))
+    epicenter_prediction = find_epicenter(timecats)
+    df = createLocationDataframe()
+    plotLocation(df, epicenter_prediction)
 
-    find_epicenter(timecats)
+def removeOutliers():
+    # Using Pandas
+    global TWEETS
+    df = createLocationDataframe()
+    df = df[(np.abs(stats.zscore(df)) < 1.5).all(axis=1)]
+
+    TWEETS = {key: val for key, val in TWEETS.items() if df.isin([key]).any().any()}
 
 def find_epicenter(timecats):
     total_sum_lat = 0
@@ -118,8 +133,11 @@ def find_epicenter(timecats):
         times -=1
         weight = 10*(0.5**times)
 
-    print(total_sum_lat/total_tweets)
-    print(total_sum_long/total_tweets)
+    lat_prediction = total_sum_lat/total_tweets
+    long_prediction = total_sum_long/total_tweets
+    print("Prediction: ", long_prediction, ", ", lat_prediction)
+    print("Actual: 84.731, 28.230")
+    return Point(long_prediction, lat_prediction)
 
 
 # Takes in a tweet and returns in that tweet should be considered in the dataset
@@ -141,7 +159,7 @@ def shouldInclude(tweet):
     return any(keyword in tweet["text"] for keyword in KEYWORDS)
 
 # Plot the tweet locations onto a visual map (using a dataframe)
-def plotLocation(tweetDF):
+def plotLocation(tweetDF, epicenter_prediction):
     # downloading the shape file
     street_map = gpd.read_file('world_map/ne_50m_admin_0_countries.shp')
 
@@ -169,6 +187,11 @@ def plotLocation(tweetDF):
     geometry4 = [Point(84.731, 28.230)]
     geo_df4 = gpd.GeoDataFrame(geometry4, crs = crs, geometry = geometry4)
     geo_df4.plot(ax = ax, markersize = 20, color = 'red', marker = 'x')
+
+    # plot epicenter prediction
+    geometry5 = [epicenter_prediction]
+    geo_df5 = gpd.GeoDataFrame(geometry5, crs = crs, geometry = geometry5)
+    geo_df5.plot(ax = ax, markersize = 20, color = 'black', marker = '*')
 
     plt.show()
     pass
@@ -208,14 +231,15 @@ def test_basemap(tweetDF):
 
 # Creates DataFrame that contains all tweets' coordinates
 def createLocationDataframe():
-    all_coordinates = list()
+    all_info = list()
     for id, tweet in TWEETS.items():
         tweet_coordinates = tweet["coordinates"]
-        all_coordinates.append(tweet_coordinates)
+        tweet_info = [tweet_coordinates[0], tweet_coordinates[1], id]
+        all_info.append(tweet_info)
 
-    df = pd.DataFrame(np.array(all_coordinates), columns=["Longitude", "Latitude"])
+    df = pd.DataFrame(np.array(all_info), columns=["Longitude", "Latitude", "id"])
+    return df
 
-    plotLocation(df)
     #test_googlemap(df)
     #test_basemap(df)
 
@@ -230,6 +254,4 @@ def exportRippleMap():
 # Main execution
 if __name__ == '__main__':
     import_tweets(TWEET_DATASET)
-    exportRippleMap()
-    createLocationDataframe()
-    print("yay ive made it to the end")
+    # exportRippleMap()
