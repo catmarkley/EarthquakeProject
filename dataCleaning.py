@@ -8,6 +8,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
+import datetime
+import pytz
+import gmplot
+# from mpl_toolkits.basemap import Basemap
+
 
 # The filename of the dataset to be parsed
 TWEET_DATASET = "./smalltweets.json"
@@ -29,23 +34,93 @@ def import_tweets(filename):
     # ignores final line of file - blank line
     rawTweets = [json.loads(tweet) for tweet in data.split('\n')[:-1]]
 
+    times = []
+
+    # Create a datetime to hold the minimum datetime from the included tweets
+    # Initialize to the maximum datetime available to ensure it is overwritten
+    minDatetime = datetime.datetime(datetime.MAXYEAR, 12, 31, 23, 59, 59, 999999, tzinfo=pytz.UTC)
+
+    # Create a datetime to hold the maximum datetime from the included tweets
+    # Initialize to the minimum datetime available to ensure it is overwritten
+    maxDatetime = datetime.datetime(datetime.MINYEAR, 1, 1, 1, 1, 1, 1, tzinfo=pytz.UTC)
+
     for tweet in rawTweets:
         if shouldInclude(tweet):
-            # print(tweet["text"])
-            # print("\n\n")
+            # Convert time stamp string into a datetime object
+            timestamp = datetime.datetime.strptime(tweet["created_at"], '%a %b %d %H:%M:%S %z %Y')
 
+            # Extract useful information
             TWEETS[tweet["id"]] = dict()
-            TWEETS[tweet["id"]]["coordinates"] = tweet["coordinates"]
-            TWEETS[tweet["id"]]["created_at"] = tweet["created_at"]
+            TWEETS[tweet["id"]]["coordinates"] = tweet["coordinates"]["coordinates"]
+            TWEETS[tweet["id"]]["created_at"] = timestamp
             TWEETS[tweet["id"]]["text"] = tweet["text"]
+
+            print(tweet["coordinates"]["coordinates"], "\n\t", tweet["text"], "\n", timestamp, "\n\n" )
+
+            # Check if new minimum
+            if timestamp < minDatetime:
+                minDatetime = timestamp
+
+            if timestamp > maxDatetime:
+                maxDatetime = timestamp
+
+            times.append(timestamp)
+
+    print("MINIMUM DATE:")
+    print(minDatetime)
+
+    # first step is the min date time rounded down to 10 minute mark (floor style)
+    step = minDatetime  - datetime.timedelta(minutes=minDatetime.minute % 10,
+                             seconds=minDatetime.second,
+                             microseconds=minDatetime.microsecond)
+
+    # create dictionary of time categories at 5 minute intervals
+    timecats = {}
+    while step < (minDatetime + datetime.timedelta(hours=1, minutes=5)):
+        timecats[step] = []
+        step += datetime.timedelta(minutes=5)
+
+    # place tweets in appropriate category
+    for id, tweet in TWEETS.items():
+        tweettime = tweet["created_at"]
+
+        # round down to find the category
+        cat = tweettime - datetime.timedelta(minutes=tweettime.minute % 5,
+                                 seconds=tweettime.second,
+                                 microseconds=tweettime.microsecond)
+
+        if cat in timecats.keys():
+            timecats[cat].append(id)
+
+
+    # for cat, ts in timecats.items():
+    #     print(cat)
+    #     for t in ts:
+    #         print("\t", t)
 
     # for tweet in TWEETS.items():
     #     print(tweet)
     print(len(TWEETS))
 
-# Returns the geolocation of the tweet
-def getLocation(tweet):
-    pass
+    find_epicenter(timecats)
+
+def find_epicenter(timecats):
+    total_sum_lat = 0
+    total_sum_long = 0
+    total_tweets = 0
+    times = len(timecats.keys()) + 1
+    weight = 10*(0.5**times)
+
+    for timecat, tweetids in timecats.items():
+        total_sum_lat  = total_sum_lat  + (weight * sum([TWEETS[id]["coordinates"][1] for id in tweetids]))
+        total_sum_long = total_sum_long + (weight * sum([TWEETS[id]["coordinates"][0] for id in tweetids]))
+        total_tweets += weight * len(tweetids)
+        times -=1
+        weight = 10*(0.5**times)
+
+    print(total_sum_lat/total_tweets)
+    print(total_sum_long/total_tweets)
+
 
 # Takes in a tweet and returns in that tweet should be considered in the dataset
 # Returns false for tweets with no geolocation, tweets not in English, and for retweets
@@ -67,8 +142,8 @@ def shouldInclude(tweet):
 
 # Plot the tweet locations onto a visual map (using a dataframe)
 def plotLocation(tweetDF):
-    # downloadingthe shape file
-    #street_map = gpd.read_file('map.shp')
+    # downloading the shape file
+    street_map = gpd.read_file('world_map/ne_50m_admin_0_countries.shp')
 
     # the lat/long coordinate reference system
     crs = {'init': 'epsg:4326'}
@@ -83,6 +158,7 @@ def plotLocation(tweetDF):
 
     # plot the map and points
     fig, ax = plt.subplots(figsize = (15, 15))
+    street_map.plot(ax = ax)
     #street_map.plot(ax = ax, alpha = 0.4, color = 'grey')
     geo_df1.plot(ax = ax, markersize = 20, color = 'blue', marker = 'o')
     geo_df2.plot(ax = ax, markersize = 20, color = 'green', marker = 'o')
@@ -90,22 +166,58 @@ def plotLocation(tweetDF):
 
     # plot true epicenter
     #center = pd.DataFrame([(28.230, 84.731)])
-    geometry4 = [Point(28.230, 84.731)]
+    geometry4 = [Point(84.731, 28.230)]
     geo_df4 = gpd.GeoDataFrame(geometry4, crs = crs, geometry = geometry4)
-    geo_df4.plot(ax = ax, markersize = 20, color = 'blue', marker = 'x')
+    geo_df4.plot(ax = ax, markersize = 20, color = 'red', marker = 'x')
 
     plt.show()
+    pass
+
+def test_googlemap(tweetDF):
+    long_list = tweetDF["Longitude"]
+    lat_list = tweetDF["Latitude"]
+
+    gmap = gmplot.GoogleMapPlotter(28.1348, 84.4352, 10)
+
+    gmap.scatter(lat_list, long_list, '#FF5555', size = 40, marker = True)
+
+    gmap.plot(lat_list, long_list, 'cornflowerblue', edge_width = 3.0)
+
+    gmap.apikey = 'AIzaSyBWohY_btQ0Gat3hMF5p-KTTUGKOZ4xQvU'
+
+    gmap.draw("./test.html")
+
+    pass
+
+def test_basemap(tweetDF):
+    fig, ax = plt.subplots(figsize = (15, 15))
+
+    long_list = tweetDF["Longitude"]
+    lat_list = tweetDF["Latitude"]
+
+    m = Basemap(projection='merc', resolution='h',
+            lat_0=28.1348, lon_0=84.4352,
+            width=1E6, height=1.2E6)
+    m.drawcountries(color='gray')
+
+    m.scatter(long_list, lat_list, marker='o', color='r')
+
+    plt.show()
+
     pass
 
 # Creates DataFrame that contains all tweets' coordinates
 def createLocationDataframe():
     all_coordinates = list()
     for id, tweet in TWEETS.items():
-        tweet_coordinates = tweet["coordinates"]["coordinates"]
+        tweet_coordinates = tweet["coordinates"]
         all_coordinates.append(tweet_coordinates)
 
-    df = pd.DataFrame(np.array(all_coordinates), columns=["Latitude", "Longitude"])
+    df = pd.DataFrame(np.array(all_coordinates), columns=["Longitude", "Latitude"])
+
     plotLocation(df)
+    #test_googlemap(df)
+    #test_basemap(df)
 
 # Places tweets onto a map of the region, creating different frames based upon
 # the time stamps. Saves locally
@@ -121,11 +233,3 @@ if __name__ == '__main__':
     exportRippleMap()
     createLocationDataframe()
     print("yay ive made it to the end")
-
-
-
-
-  #   /Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/site-packages/pyproj/crs/crs.py:55:
-  # FutureWarning: '+init=<authority>:<code>' syntax is deprecated. '<authority>:<code>' is the preferred initialization method.
-  # When making the change, be mindful of axis order changes: https://pyproj4.github.io/pyproj/stable/gotchas.html#axis-order-changes-in-proj-6
-  # return _prepare_from_string(" ".join(pjargs))
