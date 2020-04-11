@@ -11,10 +11,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 import datetime
 import pytz
-import gmplot
 from pandas.api.types import is_numeric_dtype
-# from mpl_toolkits.basemap import Basemap
-
 
 # The filename of the dataset to be parsed
 TWEET_DATASET = "./smalltweets.json"
@@ -25,7 +22,9 @@ TWEETS = dict()
 # This is a list of keywords that will be used to filter out tweets that do not contain any of them
 KEYWORDS = ["earthquake", "quake", "shaking", "shake"]
 
-# Imports tweets from files.
+
+# Imports tweets from file into a dictionary
+# returns the first/last tweets times and an array of all times
 def import_tweets(filename):
     global TWEETS
 
@@ -68,13 +67,13 @@ def import_tweets(filename):
                 maxDatetime = timestamp
 
             times.append(timestamp)
+    
+    return minDatetime, maxDatetime, times
 
-    # print("MINIMUM DATE:")
-    # print(minDatetime)
 
-    print(len(TWEETS))
-    removeOutliers()
-
+# Function to create time categories (of when tweets come in)
+# and place tweets in these time categories
+def timeDivideTweets(minDatetime):
     # first step is the min date time rounded down to 10 minute mark (floor style)
     step = minDatetime  - datetime.timedelta(minutes=minDatetime.minute % 10,
                              seconds=minDatetime.second,
@@ -98,19 +97,10 @@ def import_tweets(filename):
         if cat in timecats.keys():
             timecats[cat].append(id)
 
+    return timecats
 
-    # for cat, ts in timecats.items():
-    #     print(cat)
-    #     for t in ts:
-    #         print("\t", t)
 
-    # for tweet in TWEETS.items():
-    #     print(tweet)
-    print(len(TWEETS))
-    epicenter_prediction = find_epicenter(timecats)
-    df = createLocationDataframe()
-    plotLocation(df, epicenter_prediction)
-
+# Function to remove outlier tweets
 def removeOutliers():
     # Using Pandas
     global TWEETS
@@ -119,6 +109,9 @@ def removeOutliers():
 
     TWEETS = {key: val for key, val in TWEETS.items() if df.isin([key]).any().any()}
 
+
+# Takes in all tweets separated by time categories
+# Predict the epicenter based on an averaging algorithm and returns this point
 def find_epicenter(timecats):
     total_sum_lat = 0
     total_sum_long = 0
@@ -158,6 +151,7 @@ def shouldInclude(tweet):
     # TODO: Ensure content is about earthquake
     return any(keyword in tweet["text"] for keyword in KEYWORDS)
 
+
 # Plot the tweet locations onto a visual map (using a dataframe)
 def plotLocation(tweetDF, epicenter_prediction):
     # downloading the shape file
@@ -196,38 +190,6 @@ def plotLocation(tweetDF, epicenter_prediction):
     plt.show()
     pass
 
-def test_googlemap(tweetDF):
-    long_list = tweetDF["Longitude"]
-    lat_list = tweetDF["Latitude"]
-
-    gmap = gmplot.GoogleMapPlotter(28.1348, 84.4352, 10)
-
-    gmap.scatter(lat_list, long_list, '#FF5555', size = 40, marker = True)
-
-    gmap.plot(lat_list, long_list, 'cornflowerblue', edge_width = 3.0)
-
-    gmap.apikey = 'AIzaSyBWohY_btQ0Gat3hMF5p-KTTUGKOZ4xQvU'
-
-    gmap.draw("./test.html")
-
-    pass
-
-def test_basemap(tweetDF):
-    fig, ax = plt.subplots(figsize = (15, 15))
-
-    long_list = tweetDF["Longitude"]
-    lat_list = tweetDF["Latitude"]
-
-    m = Basemap(projection='merc', resolution='h',
-            lat_0=28.1348, lon_0=84.4352,
-            width=1E6, height=1.2E6)
-    m.drawcountries(color='gray')
-
-    m.scatter(long_list, lat_list, marker='o', color='r')
-
-    plt.show()
-
-    pass
 
 # Creates DataFrame that contains all tweets' coordinates
 def createLocationDataframe():
@@ -240,18 +202,25 @@ def createLocationDataframe():
     df = pd.DataFrame(np.array(all_info), columns=["Longitude", "Latitude", "id"])
     return df
 
-    #test_googlemap(df)
-    #test_basemap(df)
-
-# Places tweets onto a map of the region, creating different frames based upon
-# the time stamps. Saves locally
-def exportRippleMap():
-    # Separate tweets based on time stamp
-    # times = [tweet["created_at"] for tweet in TWEETS.items()]
-    # times = set(times)
-    pass
 
 # Main execution
 if __name__ == '__main__':
-    import_tweets(TWEET_DATASET)
-    # exportRippleMap()
+    minDatetime, maxDatetime, times = import_tweets(TWEET_DATASET)
+    print(len(TWEETS))
+
+    removeOutliers()
+
+    timecats = timeDivideTweets(minDatetime)
+    #print(timecats)
+
+    #for cat, ts in timecats.items():
+    #    print(cat)
+    #    for t in ts:
+    #        print("\t", t)
+
+    print(len(TWEETS))
+    
+    epicenter_prediction = find_epicenter(timecats)
+    df = createLocationDataframe()
+    plotLocation(df, epicenter_prediction)
+
