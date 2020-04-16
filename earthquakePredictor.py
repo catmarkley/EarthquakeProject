@@ -141,8 +141,6 @@ def find_epicenter(timecats):
 
     lat_prediction = total_sum_lat/total_tweets
     long_prediction = total_sum_long/total_tweets
-    print("Prediction: ", long_prediction, ", ", lat_prediction)
-    print("Actual: 84.731, 28.230")
     return Point(long_prediction, lat_prediction)
 
 
@@ -245,6 +243,7 @@ def generateParticleSet(spread, start_long, start_lat):
     part_id = 0
     for i in range(0, spread):
         for j in range(0, spread):
+            # Set the weight of all particles to 1
             # (longitude, latitude, weight, particle ID, velocity_x, velocity_y)
             particle = [longs[j], lats[i], 1, part_id, 0, 0]
             S.append(particle)
@@ -319,20 +318,17 @@ def weighted_choice(objects, weights):
             return objects[i]
 
 
-def repositionParticles(particleSet, accel_max, N, time):
-    accelerations = list(np.random.normal(0, accel_max, 2*N)) # right now I am NOT using std_dev for accel_max!!!
+def repositionParticles(particleSet, vel_max, N):
+    velocities = list(np.random.normal(0, vel_max, 2*N))
     for i in range(0, len(particleSet)):
-        a_x = accelerations[i]
-        a_y = accelerations[i+N]
-        # calculate the new velocity
-        vel_x = particleSet[i][4] + a_x
-        vel_y = particleSet[i][5] + a_y
+        vel_x = velocities[i]
+        vel_y = velocities[i+N]
         # update the particle's velocity
         particleSet[i][4] = vel_x
         particleSet[i][5] = vel_y
-        # update the particle's position based on its velocity and acceleration
-        particleSet[i][0] = particleSet[i][0] + vel_x*time + (a_x/2)*(time**2)
-        particleSet[i][1] = particleSet[i][1] + vel_y*time + (a_y/2)*(time**2)
+        # update the particle's position based on its velocity
+        particleSet[i][0] = particleSet[i][0] + vel_x
+        particleSet[i][1] = particleSet[i][1] + vel_y
 
 
 def avgOrigPartPositions(particleSet, originalParticleSet, N):
@@ -366,27 +362,22 @@ def findSeedLoc(timecats, x):
 
 
 def particleFiltering(timecats):
+
     # STEP 1: Generate a particle set S_0 by allocating N particles evenly on a map area
-        # Set map area coordinates, set N
-        # Set the weight of all particles to 1, could change this inital weight later?
-            # TODO: possibly change the initial weight of particles?
-        # Create a copy of this initial set to remember the initial positions of all particles
-        # Give a random ID to every particle as well
-        # The particles are allocated in a square, maybe I can change that later
-            # TODO: maybe allocate particles in a circle
+    # Set map area coordinates, set N
+    # The particles are allocated in a square
     
     # Find the average loc of the first x tweets and generate the particle set based on that area
     start_long, start_lat = findSeedLoc(timecats, 5)
     print("Starting long and lat: ", start_long, start_lat)
 
+    # Generate the particle set and create a copy of this original set
+    # Create a copy of this initial set to remember the initial positions of all particles
     originalParticleSet, particleSet, N, std_dev = generateParticleSet(60, start_long, start_lat)
     print("N: ", N)
     print("Std deviation: ", std_dev)
 
     # Start my for loop
-    # TODO: Add more timecats??
-
-    accel_time = 1
     time = 0
     while(time < len(timecats)):
 
@@ -408,7 +399,6 @@ def particleFiltering(timecats):
 
         # STEP 4: Create a new particle set by resampling N particles from S_0 (can pick particles more than once)
         # Sampling based on weight, so higher weight means more likely to sample
-
         particleSet = resample(particleSet, N)
 
         pred_long, pred_lat = avgOrigPartPositions(particleSet, originalParticleSet, N)
@@ -416,17 +406,11 @@ def particleFiltering(timecats):
 
         # STEP 5: Predict particle movement to the next timecat by using Newton's laws of motion
             # Each particle is randomly moved a little differently
-            # Create a normal distribution of accelerations to use, and randomly choose one for each particle
+            # Create a normal distribution of velocities to use, and randomly choose one for each particle
             # This particle movement models the earthquake information spread
             # The original earthquake location will be determined by the original location of particles
 
-        # TODO: I might want to define my own set of accelerations
-        #temp = copy.deepcopy(particleSet)
-        repositionParticles(particleSet, 0.1, N, accel_time)
-        accel_time += 1
-
-        #for i in range(0, N):
-        #    print("Orig. position: ", temp[i][0], ', ', temp[i][1], ' New position: ', particleSet[i][0], ', ', particleSet[i][1])
+        repositionParticles(particleSet, 0.5, N)
 
         # STEP 6: Repeat steps 2-6 until we have gone through all of the time categories
         time += 1
@@ -439,28 +423,36 @@ def particleFiltering(timecats):
 
 # Main execution
 if __name__ == '__main__':
+
+    # Outliers removed in this function
     minDatetime, maxDatetime, times = import_tweets(TWEET_DATASET)
     
     print("Number of tweets after outlier detection: ", len(TWEETS))
 
+    # Create time categories
     timecats = timeDivideTweets(minDatetime)
 
-    #removeOutliers()
+    # Predict the epicenter by particle filtering
+    # Since there is randomness involved, we will do this multiple times
+    avg_x = 0
+    avg_y = 0
+    iterations = 10
+    for i in range(0, iterations):
+        result = particleFiltering(timecats)
+        avg_x += result.x
+        avg_y += result.y
 
-    #print(timecats)
+    epicenter_pred_particle = Point(avg_x/iterations, avg_y/iterations)
 
-    #for cat, ts in timecats.items():
-    #    print(cat)
-    #    for t in ts:
-    #        print("\t", t)
+    print("\nParticle filtering prediction: ", epicenter_pred_particle)
 
-    #print(len(TWEETS))
-
-    epicenter_pred_particle = particleFiltering(timecats)
-
-    # This is the averaging method
+    # Predict the epicenter by an averaging method
     epicenter_pred_avg = find_epicenter(timecats)
+
+    print("Averaging method prediction: ", epicenter_pred_avg)
+
+    print("Actual: 84.731, 28.230")
+
+    # Plot points
     df = createLocationDataframe()
     plotLocation(df, epicenter_pred_avg, epicenter_pred_particle)
-    #plotLocation(df, Point(80, 25))
-
