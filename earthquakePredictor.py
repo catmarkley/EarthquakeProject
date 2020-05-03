@@ -1,4 +1,4 @@
- # CSE 40437/60437 - Social Sensing and Cyber-Physical Systems - Spring 2020
+# CSE 40437/60437 - Social Sensing and Cyber-Physical Systems - Spring 2020
 # Project
 # Chris Foley, Catherine Markley, Ale Lopez
 
@@ -15,6 +15,7 @@ from pandas.api.types import is_numeric_dtype
 import copy
 import random
 from random import random
+import sys
 
 # The filename of the dataset to be parsed
 TWEET_DATASET = "./smalltweets.json"
@@ -109,7 +110,7 @@ def timeDivideTweets(minDatetime):
             num += 1
             timecats[cat].append(id)
 
-    print("LEN OF TIMECATS VALS: ", num)
+    #print("LEN OF TIMECATS VALS: ", num)
     return timecats
 
 
@@ -226,7 +227,7 @@ def generateParticleSet(spread, start_long, start_lat):
     long_max = start_long+10
     lat_min = start_lat-10
     lat_max = start_lat+10
-    print("Starting max/min long, max/min lat: ", long_max,  ' ', long_min,  ' ', lat_max,  ' ', lat_min)
+    #print("Starting max/min long, max/min lat: ", long_max,  ' ', long_min,  ' ', lat_max,  ' ', lat_min)
     orig_S = {}
     S = []
     lat_step = (lat_max - lat_min)/spread
@@ -369,13 +370,13 @@ def particleFiltering(timecats):
     
     # Find the average loc of the first x tweets and generate the particle set based on that area
     start_long, start_lat = findSeedLoc(timecats, 5)
-    print("Starting long and lat: ", start_long, start_lat)
+    #print("Starting long and lat: ", start_long, start_lat)
 
     # Generate the particle set and create a copy of this original set
     # Create a copy of this initial set to remember the initial positions of all particles
     originalParticleSet, particleSet, N, std_dev = generateParticleSet(60, start_long, start_lat)
-    print("N: ", N)
-    print("Std deviation: ", std_dev)
+    #print("N: ", N)
+    #print("Std deviation: ", std_dev)
 
     # Start my for loop
     time = 0
@@ -402,7 +403,7 @@ def particleFiltering(timecats):
         particleSet = resample(particleSet, N)
 
         pred_long, pred_lat = avgOrigPartPositions(particleSet, originalParticleSet, N)
-        print("Predicted long, lat after reweighting and resampling: ", pred_long, pred_lat)
+        #print("Predicted long, lat after reweighting and resampling: ", pred_long, pred_lat)
 
         # STEP 5: Predict particle movement to the next timecat by using Newton's laws of motion
             # Each particle is randomly moved a little differently
@@ -417,12 +418,18 @@ def particleFiltering(timecats):
 
     # STEP 7: We will end with a set of particles - retrieve their initial location and average it: this is the predicted epicenter
     pred_long, pred_lat = avgOrigPartPositions(particleSet, originalParticleSet, N)
-    print("Final predicted long, lat: ", pred_long, pred_lat)
+    #print("Final predicted long, lat: ", pred_long, pred_lat)
     return Point(pred_long, pred_lat)
 
 
 # Main execution
 if __name__ == '__main__':
+    
+    if(len(sys.argv) < 2):
+        print("Usage: earthquakePredictor.py <iterations>")
+        exit(1)
+    else:
+        iterations = int(sys.argv[1])
 
     # Outliers removed in this function
     minDatetime, maxDatetime, times = import_tweets(TWEET_DATASET)
@@ -436,11 +443,11 @@ if __name__ == '__main__':
     # Since there is randomness involved, we will do this multiple times
     avg_x = 0
     avg_y = 0
-    iterations = 10
     for i in range(0, iterations):
         result = particleFiltering(timecats)
         avg_x += result.x
         avg_y += result.y
+        print("Particle filtering iteration ", i+1, " complete")
 
     epicenter_pred_particle = Point(avg_x/iterations, avg_y/iterations)
 
@@ -451,7 +458,7 @@ if __name__ == '__main__':
 
     print("Averaging method prediction: ", epicenter_pred_avg)
 
-    print("Actual: 84.731, 28.230")
+    print("Actual: 84.731, 28.230\n\n\n")
 
     # Plot points
     df = createLocationDataframe()
