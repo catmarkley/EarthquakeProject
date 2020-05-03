@@ -22,7 +22,7 @@ Once run, after performing both our averaging and particle filtering methods, a 
 
 ## Other Files
 
-"smalltweets.json" - our data file of tweets; contains the first 50,000 tweets (in order of time) from the extremely large original data file containing 2 million tweets.
+"smalltweets.json" - our data file of tweets; contains the first 50,000 tweets (in order of time) from the extremely large original data file containing 2 million tweets. This could not be uploaded to github but it is a dependency for this program to run.
 
 "world_map" - a folder containing the necessary files to generate our map image
 
